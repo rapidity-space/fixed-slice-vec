@@ -314,9 +314,7 @@ impl<'a, T: Sized> FixedSliceVec<'a, T> {
             // on the `len` field, which we have updated above already.
             // The early setting of `len` is designed to avoid double-free errors if there
             // is a panic in the middle of the following drop.
-            (core::slice::from_raw_parts_mut(self.storage.as_mut_ptr() as *mut T, original_len)
-                as *mut [T])
-                .drop_in_place();
+            core::ptr::slice_from_raw_parts_mut(self.storage.as_mut_ptr() as *mut T, original_len).drop_in_place();
         }
     }
 

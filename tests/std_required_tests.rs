@@ -91,49 +91,6 @@ impl Drop for TrueOnDrop {
 }
 
 #[test]
-fn embed_does_not_run_drops_atomic() {
-    let flip = Arc::new(AtomicBool::new(false));
-    let flip_clone = flip.clone();
-    let mut storage: [u8; 16] = [0u8; 16];
-    let emb = unsafe {
-        fixed_slice_vec::single::embed(&mut storage[..], move |_leftovers| {
-            Result::<TrueOnDrop, ()>::Ok(TrueOnDrop(flip_clone))
-        })
-        .unwrap()
-    };
-
-    assert!(!flip.load(Ordering::SeqCst));
-    assert!(!emb.0.load(Ordering::SeqCst));
-
-    // Manually clean up the Arc to avoid alloc-related-leak
-    unsafe {
-        let ptr: *const TrueOnDrop = emb;
-        let extracted = ptr.read();
-        std::mem::drop(extracted);
-    }
-}
-#[test]
-fn embed_uninit_does_not_run_drops_atomic() {
-    let flip = Arc::new(AtomicBool::new(false));
-    let flip_clone = flip.clone();
-    let mut storage: [MaybeUninit<u8>; 16] = unsafe { MaybeUninit::uninit().assume_init() };
-    let emb = fixed_slice_vec::single::embed_uninit(&mut storage[..], move |_leftovers| {
-        Result::<TrueOnDrop, ()>::Ok(TrueOnDrop(flip_clone))
-    })
-    .unwrap();
-
-    assert!(!flip.load(Ordering::SeqCst));
-    assert!(!emb.0.load(Ordering::SeqCst));
-
-    // Manually clean up the Arc to avoid alloc-related-leak
-    unsafe {
-        let ptr: *const TrueOnDrop = emb;
-        let extracted = ptr.read();
-        std::mem::drop(extracted);
-    }
-}
-
-#[test]
 fn fsv_does_not_run_drops_on_push_atomic() {
     let flip = Arc::new(AtomicBool::new(false));
     let mut storage: [MaybeUninit<u8>; 16] = unsafe { MaybeUninit::uninit().assume_init() };

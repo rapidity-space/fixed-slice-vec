@@ -6,6 +6,7 @@ authors = [
     "Jon Lamb <jon@auxon.io>",
     "Russell Mull <russell@auxon.io>",
     "dan pittman <dan@auxon.io>",
+    "Tage Johansson <tage.johansson@rapidity-space.com>",
 ]
 edition = "2018"
 license = "Apache-2.0"

@@ -5,6 +5,7 @@ use core::convert::From;
 use core::hash::{Hash, Hasher};
 use core::iter::Extend;
 use core::mem::MaybeUninit;
+use core::ops::{Bound, RangeBounds};
 use core::ops::{Deref, DerefMut};
 
 /// Vec-like structure backed by a storage slice of possibly uninitialized data.
@@ -363,6 +364,54 @@ impl<'a, T: Sized> FixedSliceVec<'a, T> {
             (&mut core::slice::from_raw_parts_mut(self.storage.as_mut_ptr() as *mut T, original_len)[len..] as *mut [T]).drop_in_place();
         }
     }
+
+    /// Remove a range of elements from the FixedSliceVec.
+    ///
+    /// This is similar to the `drain()` method on `Vec` except that it just drops the removed
+    /// elements instead of returning an iterator to them. The implementation is much simpler in
+    /// this case.
+    ///
+    /// Panics if `start > end` or `end` is passed the end of the vec.
+    pub fn remove_range(&mut self, range: impl RangeBounds<usize>) {
+        // XXX: Use slice::range() to compute start and end once it is stabilised.
+        let end = match range.end_bound() {
+            Bound::Included(&end) => end + 1,
+            Bound::Excluded(&end) => end,
+            Bound::Unbounded => self.len(),
+        };
+        assert!(end <= self.len(), "range end too large");
+
+        let start = match range.start_bound() {
+            Bound::Excluded(&start) => start + 1,
+            Bound::Included(&start) => start,
+            Bound::Unbounded => 0,
+        };
+        if start == end {
+            return;
+        }
+        assert!(start < end, "start <= end");
+        let len = self.len();
+
+        // Drop the items in start..end.
+        // We temporarily set the length to start to avoid UB in case of a panic.
+        self.len = start;
+        for item in &mut self.storage[start..end] {
+            unsafe { item.assume_init_drop() }
+        }
+
+        // Move the tail to begin at start.
+        let tail_len = len - end;
+        if tail_len > 0 {
+            unsafe {
+                let dst_ptr = self.as_mut_ptr().add(start);
+                let src_ptr = self.as_ptr().add(end);
+                core::ptr::copy(src_ptr, dst_ptr, tail_len);
+            }
+        }
+
+        self.len = start + tail_len;
+    }
+
     /// Removes and returns the element at position `index` within the FixedSliceVec,
     /// shifting all elements after it to the left.
     ///
@@ -1036,5 +1085,48 @@ mod tests {
         let storage_3 = v.into_storage();
         assert_eq!(1, std::rc::Rc::strong_count(&foo));
         assert_eq!(v_cap, storage_3.len());
+    }
+
+    #[test]
+    fn remove_range() {
+        let mut storage = [MaybeUninit::<u32>::uninit(); 16];
+        let mut vec = FixedSliceVec::new(&mut storage);
+
+        vec.remove_range(..);
+        assert!(vec.is_empty());
+
+        vec.extend(0..16);
+        vec.remove_range(12..);
+        assert!(vec.iter().copied().eq(0..12));
+
+        vec.remove_range(11..=11);
+        assert!(vec.iter().copied().eq(0..11));
+        vec.remove_range(1..1);
+        assert!(vec.iter().copied().eq(0..11));
+
+        vec.remove_range(2..9);
+        assert_eq!([0, 1, 9, 10], vec.as_slice());
+        vec.remove_range(..0);
+        assert_eq!([0, 1, 9, 10], vec.as_slice());
+        vec.remove_range(..2);
+        assert_eq!([9, 10], vec.as_slice());
+        vec.remove_range(..);
+        assert!(vec.is_empty());
+
+        // Check that drop is called properly.
+        let mut storage = [MaybeUninit::<u8>::uninit(); 1024];
+        let mut vec = FixedSliceVec::from_uninit_bytes(&mut storage);
+        let rc = std::rc::Rc::new(42);
+        for _ in 0..16 {
+            vec.push(rc.clone());
+        }
+        assert_eq!(17, std::rc::Rc::strong_count(&rc));
+
+        vec.remove_range(2..10);
+        assert_eq!(9, std::rc::Rc::strong_count(&rc));
+        vec.remove_range(4..);
+        assert_eq!(5, std::rc::Rc::strong_count(&rc));
+        vec.remove_range(..);
+        assert_eq!(1, std::rc::Rc::strong_count(&rc));
     }
 }

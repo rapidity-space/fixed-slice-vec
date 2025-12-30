@@ -195,6 +195,32 @@ impl<'a, T: Sized> FixedSliceVec<'a, T> {
         self.storage.as_ptr()
     }
 
+    /// Convert the FixedSliceVec into the underlying storage. Drop will be called for all items in
+    /// the vec.
+    pub fn into_storage(self) -> &'a mut [MaybeUninit<T>] {
+        let storage_ptr = &raw const self.storage;
+        drop(self);
+        unsafe { core::ptr::read(storage_ptr) }
+    }
+
+    /// Convert the FixedSliceVec into the underlying storage as bytes. Drop will be called for all
+    /// items in the vec.
+    ///
+    /// The length of the returned slice will be the size of `T` times the capacity. It might be
+    /// slightly shorter than the slice passed to for instance
+    /// [`FixedSliceVec::from_uninit_bytes()`] due to alignment.
+    pub fn into_byte_storage(self) -> &'a mut [MaybeUninit<u8>] {
+        let storage_ptr = &raw const self.storage;
+        drop(self);
+        let storage = unsafe { core::ptr::read(storage_ptr) };
+        unsafe {
+            core::slice::from_raw_parts_mut(
+                storage.as_mut_ptr().cast(),
+                storage.len() * size_of::<T>(),
+            )
+        }
+    }
+
     /// The length of the FixedSliceVec. The number of initialized
     /// values that have been added to it.
     #[inline]
@@ -975,5 +1001,40 @@ mod tests {
             d.try_insert(0usize, 2).is_err(),
             "Zero remaining capacity should fail an insert"
         );
+    }
+
+    #[test]
+    fn into_storage() {
+        let mut storage = [MaybeUninit::<u64>::uninit(); 8];
+
+        assert_eq!(8, FixedSliceVec::new(&mut storage).into_storage().len());
+        assert_eq!(
+            64,
+            FixedSliceVec::new(&mut storage).into_byte_storage().len()
+        );
+
+        // Make sure that drop is called.
+        let foo = std::rc::Rc::new(42);
+        let mut storage = [MaybeUninit::<u8>::uninit(); 256];
+
+        let mut v = FixedSliceVec::from_uninit_bytes(&mut storage);
+        v.push(foo.clone());
+        v.push(foo.clone());
+        assert_eq!(3, std::rc::Rc::strong_count(&foo));
+
+        let v_cap = v.capacity();
+        let storage_2 = v.into_byte_storage();
+        assert_eq!(1, std::rc::Rc::strong_count(&foo));
+        assert_eq!(v_cap * size_of_val(&foo), storage_2.len());
+
+        let mut v = FixedSliceVec::from_uninit_bytes(storage_2);
+        v.push(foo.clone());
+        v.push(foo.clone());
+        assert_eq!(3, std::rc::Rc::strong_count(&foo));
+
+        let v_cap = v.capacity();
+        let storage_3 = v.into_storage();
+        assert_eq!(1, std::rc::Rc::strong_count(&foo));
+        assert_eq!(v_cap, storage_3.len());
     }
 }

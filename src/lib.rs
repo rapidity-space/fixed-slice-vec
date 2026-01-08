@@ -196,6 +196,15 @@ impl<'a, T: Sized> FixedSliceVec<'a, T> {
         self.storage.as_ptr()
     }
 
+    /// Consume this [`FixedSliceVec`] and get a slice with all initialised items. (Works only for
+    /// [`Copy`] types as they don't require drop.)
+    pub fn into_slice(self) -> &'a mut [T]
+    where
+        T: Copy,
+    {
+        unsafe { core::slice::from_raw_parts_mut(self.storage.as_mut_ptr() as *mut T, self.len) }
+    }
+
     /// Convert the FixedSliceVec into the underlying storage. Drop will be called for all items in
     /// the vec.
     pub fn into_storage(self) -> &'a mut [MaybeUninit<T>] {

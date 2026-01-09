@@ -1,5 +1,6 @@
 //! FixedSliceVec is a structure for defining variably populated vectors backed
 //! by a slice of storage capacity.
+#![no_std]
 use core::borrow::{Borrow, BorrowMut};
 use core::convert::From;
 use core::hash::{Hash, Hasher};
@@ -678,6 +679,8 @@ impl<'a, T: Sized> Extend<T> for FixedSliceVec<'a, T> {
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
+
     use super::*;
 
     #[test]
